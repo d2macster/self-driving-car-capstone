@@ -6,8 +6,25 @@ from styx_msgs.msg import Lane, Waypoint
 
 import math
 
+# PoseStamped message format
+#
+# std_msgs/Header header
+#   uint32 seq
+#   time stamp
+#   string frame_id
+# geometry_msgs/Pose pose
+#   geometry_msgs/Point position
+#     float64 x
+#     float64 y
+#     float64 z
+#   geometry_msgs/Quaternion orientation
+#     float64 x
+#     float64 y
+#     float64 z
+#     float64 w
+
 # Lane message format
-# ----------
+#
 # std_msgs/Header header
 #   uint32 seq
 #   time stamp
@@ -89,6 +106,8 @@ class WaypointUpdater(object):
             pose = self.current_pose
             wpts = self.base_waypoints.waypoints
 
+            print(pose)
+
             lane = Lane()
             final_waypoints = []
             # This is a subset of /base_waypoints.
@@ -140,6 +159,20 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def get_closest_waypoint(self, pose, waypoints):
+
+        closest_dist = float('inf')
+        closest_wp = 0
+
+        dl = lambda a, b: math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
+        for i in range(len(waypoints)):
+            dist = dl(pose.pose.position, waypoints[i].pose.pose.position)
+            if dist < closest_dist:
+                closest_dist = dist
+                closest_wp = i
+
+        return closest_wp
 
 
 if __name__ == '__main__':
