@@ -1,6 +1,9 @@
-
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
+
+from pid import PID
+from lowpass import LowPassFilter
+from yaw_controller import YawController
 
 
 class Controller(object):
@@ -11,4 +14,4 @@ class Controller(object):
     def control(self, *args, **kwargs):
         # TODO: Change the arg, kwarg list to suit your needs
         # Return throttle, brake, steer
-        return 1., 0., 0.
+        return 0.5, 0., 0.
