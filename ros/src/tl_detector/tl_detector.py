@@ -91,6 +91,21 @@ class TLDetector(object):
         self.state_count += 1
 
     def get_closest_waypoint(self, pose):
+        if self.waypoints is None or pose is None:
+            rospy.loginfo("Base waypoint or current pose info are missing. Cannot find nearest waypoints ...")
+            return None
+        else:
+            position_x, position_y = pose[0], pose[1]
+            closest_index = None
+            min_dist = 99999
+
+            for i in range(len(self.waypoints.waypoints)):
+                waypoint_x, waypoint_y = self.waypoints.waypoints[i].pose.pose.position.x, self.waypoints.waypoints[i].pose.pose.position.y
+                dist = (waypoint_x - position_x)**2 + (waypoint_y - position_y)**2
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_index = i
+
         """Identifies the closest path waypoint to the given position
             https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
         Args:
@@ -101,7 +116,7 @@ class TLDetector(object):
 
         """
         #TODO implement
-        return 0
+        return closest_index
 
     def get_light_state(self, light):
         """Determines the current color of the traffic light
@@ -136,9 +151,14 @@ class TLDetector(object):
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
         if(self.pose):
-            car_position = self.get_closest_waypoint(self.pose.pose)
-
+            car_position = self.get_closest_waypoint([self.pose.pose.position.x, self.pose.pose.position.y])
         #TODO find the closest visible traffic light (if one exists)
+            light_wp = 9999
+            for stop_line in stop_line_positions:
+                stop_line_wp = self.get_closest_waypoint(stop_line)
+                if (stop_line_wp >= car_position) and ( (stop_line_wp - car_position) < light_wp ) :
+                    light_wp = stop_line_wp
+                    light = stop_line
 
         if light:
             state = self.get_light_state(light)
