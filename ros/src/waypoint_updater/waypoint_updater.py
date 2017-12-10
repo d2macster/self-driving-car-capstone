@@ -2,6 +2,7 @@
 
 import rospy
 import math
+import tf
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 from itertools import islice, cycle
@@ -82,12 +83,25 @@ class WaypointUpdater(object):
         dist_y = car_pose.position.y - waypoint.pose.pose.position.y
         return math.sqrt(dist_x**2 + dist_y**2)
 
+    def closest_waypoint_heading(self, car_pose, waypoints, closest_wp_pos):
+        closest_wp_x = waypoints[closest_wp_pos].pose.pose.position.x
+        closest_wp_y = waypoints[closest_wp_pos].pose.pose.position.y
+        heading = math.atan2(closest_wp_y-car_pose.position.y,
+                             closest_wp_x-car_pose.position.x)
+        return heading
+
+    def car_pose_heading(self, car_pose):
+        RPY = self.RPY_from_quaternion(car_pose.orientation)
+        # get yaw angle (last sequence of returning list)
+        return RPY[-1]
+
     def prepare_lookahead_waypoints(self):
         if self.waypoints is None or self.current_pose is None:
             rospy.loginfo("Base waypoint or current pose info are missing. Not publishing waypoints ...")
             return None
         else:
-            closest_dist = 1000000000  # initialize with very large value
+            # find waypoint that is closest to the car
+            closest_dist = float('inf')  # initialize with very large value
             closest_wp_pos = None  # closest waypoint's position (among the waypoint list)
             for i in range(len(self.waypoints)):
                 # extract waypoint coordinates
@@ -98,6 +112,21 @@ class WaypointUpdater(object):
                 if dist < closest_dist:
                     closest_dist = dist
                     closest_wp_pos = i
+
+            # check if we already passed the closest waypoint we found
+            # get heading of closest waypoint
+            theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, closest_wp_pos)
+            # get heading of car (current pose)
+            theta_car = self.car_pose_heading(self.current_pose)
+            # check if we should skip the current closest waypoint (in case we passed it already)
+            diff_angle = math.fabs(theta_car-theta_waypoint)
+            rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
+            if diff_angle > math.pi / 4.0:
+                # skip to next closest waypoint
+                # rospy.loginfo("closest waypoint skipped. Next closest one picked ...")
+                closest_wp_pos += 1
+
+            # create list of waypoints starting from index: closest_wp_ros
             seq = cycle(self.waypoints)  # loop string of waypoints
             end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
             next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
@@ -118,7 +147,11 @@ class WaypointUpdater(object):
             self.final_waypoints_pub.publish(lane)
 
     def mph_to_mps(self, data):
-        return data*0.447
+        return data * 0.447
+
+    def RPY_from_quaternion(self, orientation):
+        x, y, z, w = orientation.x, orientation.y, orientation.z, orientation.w
+        return tf.transformations.euler_from_quaternion([x, y, z, w])
 
 if __name__ == '__main__':
     try:
