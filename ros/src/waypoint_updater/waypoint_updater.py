@@ -77,30 +77,23 @@ class WaypointUpdater(object):
     def set_waypoint_velocity(self, waypoints, waypoint, velocity):
         waypoints[waypoint].twist.twist.linear.x = velocity
 
-    def distance(self, waypoints, wp1, wp2):
-        dist = 0
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2)
-        for i in range(wp1, wp2+1):
-            dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
-            wp1 = i
-        return dist
+    def distance(self, car_pose, waypoint):
+        dist_x = car_pose.position.x - waypoint.pose.pose.position.x
+        dist_y = car_pose.position.y - waypoint.pose.pose.position.y
+        return math.sqrt(dist_x**2 + dist_y**2)
 
     def prepare_lookahead_waypoints(self):
         if self.waypoints is None or self.current_pose is None:
             rospy.loginfo("Base waypoint or current pose info are missing. Not publishing waypoints ...")
             return None
         else:
-            # current pose of the car (x and y coordinates)
-            car_x, car_y = self.current_pose.position.x, self.current_pose.position.y
             closest_dist = 1000000000  # initialize with very large value
             closest_wp_pos = None  # closest waypoint's position (among the waypoint list)
             for i in range(len(self.waypoints)):
                 # extract waypoint coordinates
                 waypoint = self.waypoints[i]
-                wp_x = waypoint.pose.pose.position.x
-                wp_y = waypoint.pose.pose.position.y
                 # calculate distance between the car's pose to each waypoint
-                dist = math.sqrt((car_x-wp_x)**2 + (car_y-wp_y)**2)
+                dist = self.distance(self.current_pose, waypoint)
                 # search for position of closest waypoint to the car
                 if dist < closest_dist:
                     closest_dist = dist
