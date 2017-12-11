@@ -12,6 +12,7 @@ import cv2
 import yaml
 
 STATE_COUNT_THRESHOLD = 3
+LOOKAHEAD_WPS = 200
 
 class TLDetector(object):
     def __init__(self):
@@ -32,6 +33,7 @@ class TLDetector(object):
         simulator. When testing on the vehicle, the color state will not be available. You'll need to
         rely on the position of the light and the camera image to predict it.
         '''
+
         sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
         sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
 
@@ -131,8 +133,9 @@ class TLDetector(object):
         if(not self.has_image):
             self.prev_light_loc = None
             return False
+        self.camera_image.encoding = "rgb8";
 
-        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
 
         #Get classification
         return self.light_classifier.get_classification(cv_image)
@@ -150,18 +153,23 @@ class TLDetector(object):
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
-        if(self.pose):
+        if(self.pose and self.waypoints and self.light_classifier):
             car_position = self.get_closest_waypoint([self.pose.pose.position.x, self.pose.pose.position.y])
         #TODO find the closest visible traffic light (if one exists)
             light_wp = 9999
-            for stop_line in stop_line_positions:
+            for index, stop_line in enumerate(stop_line_positions):
                 stop_line_wp = self.get_closest_waypoint(stop_line)
-                if (stop_line_wp >= car_position) and ( (stop_line_wp - car_position) < light_wp ) :
+                num_wp_ahead = stop_line_wp - car_position
+                if (stop_line_wp > car_position) and ( num_wp_ahead < light_wp ) and (num_wp_ahead < 200):
                     light_wp = stop_line_wp
-                    light = stop_line
+                    rospy.loginfo(light_wp)
+                    light = self.lights[index]
 
         if light:
+            rospy.loginfo('there is a light ahead')
+            rospy.loginfo(light.state)
             state = self.get_light_state(light)
+            rospy.loginfo(state)
             return light_wp, state
         self.waypoints = None
         return -1, TrafficLight.UNKNOWN
