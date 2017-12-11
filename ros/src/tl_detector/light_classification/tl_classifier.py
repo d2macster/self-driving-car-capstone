@@ -20,7 +20,7 @@ class TLClassifier(object):
             for filename in chunks:
                 filepath = os.path.join(dir_path+'/frozen_model_chunks', filename)
                 with open(filepath, 'rb') as fileobj:
-                    for chunk in iter(partial(fileobj.read, self.readsize), ''):
+                    for chunk in iter(partial(fileobj.read, 1024), ''):
                         output.write(chunk)
             output.close()
 
@@ -83,4 +83,3 @@ class TLClassifier(object):
 
 
         return self.light_state
-
