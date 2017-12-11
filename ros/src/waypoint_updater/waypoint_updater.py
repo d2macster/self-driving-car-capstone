@@ -112,7 +112,6 @@ class WaypointUpdater(object):
                 if dist < closest_dist:
                     closest_dist = dist
                     closest_wp_pos = i
-
             # check if we already passed the closest waypoint we found
             # get heading of closest waypoint
             theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, closest_wp_pos)
@@ -120,11 +119,13 @@ class WaypointUpdater(object):
             theta_car = self.car_pose_heading(self.current_pose)
             # check if we should skip the current closest waypoint (in case we passed it already)
             diff_angle = math.fabs(theta_car-theta_waypoint)
-            rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
+            # rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
             if diff_angle > math.pi / 4.0:
                 # skip to next closest waypoint
-                # rospy.loginfo("closest waypoint skipped. Next closest one picked ...")
+                rospy.loginfo("closest waypoint skipped. Next closest one picked ...")  # debug only
                 closest_wp_pos += 1
+            else:
+                rospy.loginfo("current closest waypoint maintained ...")  # debug only
 
             # create list of waypoints starting from index: closest_wp_ros
             seq = cycle(self.waypoints)  # loop string of waypoints
