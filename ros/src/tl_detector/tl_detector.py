@@ -162,17 +162,13 @@ class TLDetector(object):
                 num_wp_ahead = stop_line_wp - car_position
                 if (stop_line_wp > car_position) and ( num_wp_ahead < light_wp ) and (num_wp_ahead < 200):
                     light_wp = stop_line_wp
-                    rospy.loginfo(light_wp)
                     light = self.lights[index]
 
         if light:
-            rospy.loginfo('there is a light ahead')
-            rospy.loginfo(light.state)
             state = light.state
+            # for now bypass classifier as improve it
             # state = self.get_light_state(light)
-            rospy.loginfo(state)
             return light_wp, state
-        # self.waypoints = None
         return -1, TrafficLight.UNKNOWN
 
 if __name__ == '__main__':
