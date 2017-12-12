@@ -1,16 +1,20 @@
 GAS_DENSITY = 2.858
 ONE_MPH = 0.44704
+THROTTLE_MAX = 0.75  # lets not drive very aggressively
 
 import rospy
 import math
 
 from pid import PID
 from yaw_controller import YawController
+from lowpass import LowPassFilter
 
 
 class Controller(object):
     def __init__(self, *args, **kwargs):
-        self.pid_controller = PID(1.0, 0.2, 4)
+        self.pid_controller = PID(1.0, 0.005, 0.0)
+        self.brake_lpf = LowPassFilter(0.2, 0.1)
+
         self.yaw_controller = YawController(
             wheel_base=kwargs['wheel_base'],
             steer_ratio=kwargs['steer_ratio'],
@@ -21,6 +25,8 @@ class Controller(object):
 
         self.prev_time = None
         self.prev_throttle = 0
+        self.accel_limit = kwargs['accel_limit']
+        self.decel_limit = kwargs['decel_limit']
 
         total_vehicle_mass = kwargs['vehicle_mass'] + kwargs['fuel_capacity'] * GAS_DENSITY
         self.max_brake_torque = total_vehicle_mass * abs(kwargs['decel_limit']) * kwargs['wheel_radius']
@@ -56,6 +62,8 @@ class Controller(object):
             return throttle, brake, steering
 
         delta_v = desired_linear_velocity - current_linear_velocity
+        delta_v = max(self.decel_limit, delta_v)
+        delta_v = min(delta_v, self.accel_limit)
         delta_t = float(rospy.get_time() - self.prev_time)
         self.prev_time = rospy.get_time()
 
@@ -66,19 +74,25 @@ class Controller(object):
         # throttle : [0 .. 1]
         # brake : torque (N*m) = F(acceleration, weight, wheel radius)
 
+        if desired_linear_velocity == 0:
+            control = -1
 
         if control > 0:
-            throttle = 2 * math.tanh(control)
-            throttle = max(0.0, min(1.0, throttle))
-            if throttle - self.prev_throttle > 0.1:
-                throttle = self.prev_throttle + 0.1
-            brake = 0.0
-        elif control >= -1:
-            throttle = 0.0
+            throttle = math.tanh(control)
+            throttle = max(0.0, min(THROTTLE_MAX, throttle))
             brake = 0.0
         else:
             throttle = 0.0
-            brake = min(self.max_brake_torque, -control + 1)
+
+            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(delta_v))
+            if desired_linear_velocity <= ONE_MPH * 1.0:
+                brake = 0.4*self.max_brake_torque
+                if current_linear_velocity <= ONE_MPH * 5.0:
+                    brake = self.max_brake_torque
+            brake = min(brake, self.max_brake_torque)
+            brake = max(1.0, brake)
+
+            brake = self.brake_lpf.filt(brake)
 
         self.prev_throttle = throttle
 
