@@ -168,10 +168,11 @@ class TLDetector(object):
         if light:
             rospy.loginfo('there is a light ahead')
             rospy.loginfo(light.state)
-            state = self.get_light_state(light)
+            state = light.state
+            # state = self.get_light_state(light)
             rospy.loginfo(state)
             return light_wp, state
-        self.waypoints = None
+        # self.waypoints = None
         return -1, TrafficLight.UNKNOWN
 
 if __name__ == '__main__':
