@@ -6,6 +6,7 @@ import tf
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
 from itertools import islice, cycle
+from std_msgs.msg import Int32
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -19,7 +20,6 @@ Please note that our simulator also provides the exact location of traffic light
 current status in `/vehicle/traffic_lights` message. You can use this message to build this node
 as well as to verify your TL classifier.
 
-TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200  # Number of waypoints we will publish. You can change this number
@@ -29,12 +29,18 @@ class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
 
+        # Initialize traffic light ID.
+        # currently if RED return traffic light ID. If not return -1
+        # TODO: extend logic for yellow light
+        self.traffic_light_waypoint = -1 
+
         # Subscribers
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb, queue_size=1)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
         # when taking traffic info into account, need two more subscribers here
         # /traffic_waypoint and /current_velocity (for planning waypoints at traffic light)
-        # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
+        # TODO: Add a subscriber for /obstacle_waypoint below
 
         # Publisher
         # This topic: /final_waypoints is subscribed from node pure_pursuit in waypoint_follower package
@@ -64,7 +70,7 @@ class WaypointUpdater(object):
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
         # will implement this later
-        pass
+        self.traffic_light_waypoint = msg.data 
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
@@ -132,12 +138,34 @@ class WaypointUpdater(object):
             end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
             next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
 
-            # without considering any traffic
-            # let's make the car move forward with constant velocity (10mph)
-            # we have to modify this part later
-            for i in range(len(next_waypoints)-1):
-                target_vel = self.mph_to_mps(10)
-                self.set_waypoint_velocity(next_waypoints, i, target_vel)
+            # if no red light detected or traffic light lies ahead of projected waypoints
+            #TODO check if OR-logic for checking if traffic light
+            #     lies ahead of 200 WPs is robust
+            if ((self.traffic_light_waypoint == -1) or (self.traffic_light_waypoint > end_pos)): 
+               # without considering any traffic
+               # let's make the car move forward with constant velocity (10mph)
+               # we have to modify this part later
+               for i in range(len(next_waypoints)-1):
+                   target_vel = self.mph_to_mps(10)
+                   self.set_waypoint_velocity(next_waypoints, i, target_vel)
+
+            else:
+               # extract id of traffic light waypoint
+               tl_id = self.traffic_light_waypoint
+               # calculate distance between the car's pose to traffic light
+               dist_tl = self.distance(self.current_pose, self.waypoints[tl_id])
+
+               for i in range(len(next_waypoints)-1):
+                   if i >= tl_id:
+                      target_vel = 0
+                      self.set_waypoint_velocity(next_waypoints, i, target_vel)
+                   else:
+                      # calculate distance to the car's future waypoints
+                      dist_wp = self.distance(self.current_pose, self.waypoints[tl_id])
+                      #adjust target velocity accordingly to distance to traffic light
+                      target_vel = self.mph_to_mps(10)*(dist_tl-dist_wp)/dist_tl
+                      self.set_waypoint_velocity(next_waypoints, i, target_vel)
+
             return next_waypoints
 
     def publish_final_waypoints(self, waypoints):
