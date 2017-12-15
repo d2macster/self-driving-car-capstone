@@ -61,6 +61,9 @@ class Controller(object):
             self.prev_time = rospy.get_time()
             return throttle, brake, steering
 
+        # if current_linear_velocity == 0:
+        #     self.pid_controller.reset()
+
         delta_v = desired_linear_velocity - current_linear_velocity
         delta_v = max(self.decel_limit, delta_v)
         delta_v = min(delta_v, self.accel_limit)
@@ -84,7 +87,7 @@ class Controller(object):
         else:
             throttle = 0.0
 
-            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(delta_v))
+            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(control))
             if desired_linear_velocity <= ONE_MPH * 1.0:
                 brake = 0.4*self.max_brake_torque
                 if current_linear_velocity <= ONE_MPH * 5.0:
