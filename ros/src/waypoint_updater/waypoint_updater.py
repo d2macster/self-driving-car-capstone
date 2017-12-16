@@ -24,10 +24,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200  # Number of waypoints we will publish. You can change this number
-ACCELERATION = 0.447 * 1.0  # increase in speed between two adjacent waypoints, meters/ses/sec
-MAX_DECELERATION = 0.447 * 4.0  # decrease in speed between two adjacent waypoints, meters/ses/sec
-MAX_ALLOWED_SPEED = 0.447 * 50.0
-SLOW_DOWN_WP = 50
+BUFFER = 5
 
 
 class WaypointUpdater(object):
@@ -56,24 +53,27 @@ class WaypointUpdater(object):
         self.final_waypoints = Lane()
         self.is_braking = False
 
+        self.max_velocity = None
+        self.decel_limit = None
+        self.accel_limit = None
+
         rospy.spin()
 
     def current_velocity_cb(self, msg):
         self.current_velocity = msg.twist.linear.x
 
     def pose_cb(self, msg):
-        # TODO: Implement
         self.current_pose = msg.pose
         next_waypoints = self.prepare_lookahead_waypoints()
         if next_waypoints is not None:
             self.publish_final_waypoints(next_waypoints)
 
     def waypoints_cb(self, msg):
-        # TODO: Implement
         # Note that the publisher for /base_waypoints publishes only once
         # so we fill in the data only when it receives no prior waypoints info
         if self.waypoints is None:
             self.waypoints = msg.waypoints
+            self.max_velocity = rospy.get_param('wp_l_velocity')
 
     def traffic_cb(self, msg):
         self.traffic = msg.data
@@ -93,7 +93,8 @@ class WaypointUpdater(object):
     def distance(self, car_pose, waypoint):
         dist_x = car_pose.position.x - waypoint.pose.pose.position.x
         dist_y = car_pose.position.y - waypoint.pose.pose.position.y
-        return math.sqrt(dist_x ** 2 + dist_y ** 2)
+        dist_z = car_pose.position.z - waypoint.pose.pose.position.z
+        return math.sqrt(dist_x ** 2 + dist_y ** 2 + dist_z ** 2)
 
     def closest_waypoint_heading(self, car_pose, waypoints, closest_wp_pos):
         closest_wp_x = waypoints[closest_wp_pos].pose.pose.position.x
@@ -108,6 +109,11 @@ class WaypointUpdater(object):
         return RPY[-1]
 
     def prepare_lookahead_waypoints(self):
+        if self.decel_limit is None or self.accel_limit is None:
+            self.accel_limit = math.fabs(rospy.get_param('dbw_accel_limit'))
+            self.decel_limit = math.fabs(rospy.get_param('dbw_decel_limit'))
+            return None
+
         if self.waypoints is None or self.current_pose is None:
             rospy.loginfo("Base waypoint or current pose info are missing. Not publishing waypoints ...")
             return None
@@ -144,33 +150,38 @@ class WaypointUpdater(object):
             end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
             next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
 
-            max_vel = self.mph_to_mps(50)
             if self.traffic is None or self.traffic == -1:
                 self.is_braking = False
-                # no red light
-                target_vel = self.current_velocity
+                # no red light : lets accelerate
+                vel = self.current_velocity
+
                 for i in range(len(next_waypoints) - 1):
-                    target_vel += ACCELERATION
-                    target_vel = min(max_vel, target_vel)
-                    target_vel = max(0.0, target_vel)
-                    self.set_waypoint_velocity(next_waypoints, i, target_vel)
+                    if i == 0:
+                        dist = self.distance(self.current_pose, next_waypoints[0])
+                    else:
+                        dist = self.distance(next_waypoints[i-1].pose.pose, next_waypoints[i])
+
+                    vel += self.accel_limit * dist
+                    vel = min(self.max_velocity, vel)
+                    vel = max(0.0, vel)
+                    self.set_waypoint_velocity(next_waypoints, i, vel)
             else:
                 # slowing down
                 self.is_braking = True
-                target_vel = self.current_velocity
-                wp_dist = max(1, self.traffic - closest_wp_pos)
-                delta_v = min(MAX_DECELERATION, self.current_velocity/wp_dist)
-                cruise_v = self.mph_to_mps(5.0)
+                tl_dist = max(1.0, self.distance(self.current_pose, self.waypoints[self.traffic]) - BUFFER)
 
-                if wp_dist < 10:
-                    cruise_v = 0.0
-                    delta_v = MAX_DECELERATION
+                vel = self.current_velocity
+                decel = min(self.decel_limit, vel / tl_dist)
 
                 for i in range(len(next_waypoints) - 1):
-                    target_vel -= delta_v
-                    target_vel = min(max_vel, target_vel)
-                    target_vel = max(cruise_v, target_vel)
-                    self.set_waypoint_velocity(next_waypoints, i, target_vel)
+                    if i == 0:
+                        dist = self.distance(self.current_pose, next_waypoints[0])
+                    else:
+                        dist = self.distance(next_waypoints[i-1].pose.pose, next_waypoints[i])
+                    vel -= decel * dist
+                    if vel <= 0.447:
+                        vel = 0.0
+                    self.set_waypoint_velocity(next_waypoints, i, vel)
 
             return next_waypoints
 
