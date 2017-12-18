@@ -51,7 +51,6 @@ class WaypointUpdater(object):
         self.waypoints = None
         self.traffic = -1
         self.final_waypoints = Lane()
-        self.is_braking = False
 
         self.max_velocity = None
         self.decel_limit = None
@@ -152,7 +151,6 @@ class WaypointUpdater(object):
             next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
 
             if self.traffic == -1:
-                self.is_braking = False
                 # no red light : lets accelerate
                 vel = self.current_velocity
 
@@ -168,7 +166,6 @@ class WaypointUpdater(object):
                     self.set_waypoint_velocity(next_waypoints, i, vel)
             else:
                 # slowing down
-                self.is_braking = True
                 tl_dist = max(1.0, self.distance(self.current_pose, self.waypoints[self.traffic]) - BUFFER)
 
                 vel = self.current_velocity
