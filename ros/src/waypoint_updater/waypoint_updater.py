@@ -56,6 +56,8 @@ class WaypointUpdater(object):
         self.decel_limit = None
         self.accel_limit = None
 
+        self.is_braking = False
+
         rospy.spin()
 
     def current_velocity_cb(self, msg):
@@ -108,6 +110,10 @@ class WaypointUpdater(object):
         # get yaw angle (last sequence of returning list)
         return RPY[-1]
 
+    def min_stopping_distance(self, velocity):
+        t = 1.0*velocity/self.decel_limit
+        return 0.5*self.decel_limit*(t**2)
+
     def prepare_lookahead_waypoints(self):
         if self.decel_limit is None or self.accel_limit is None:
             self.accel_limit = math.fabs(rospy.get_param('/dbw_node/accel_limit'))
@@ -152,36 +158,54 @@ class WaypointUpdater(object):
 
             if self.traffic == -1:
                 # no red light : lets accelerate
-                vel = self.current_velocity
+                self.is_braking = False
 
-                for i in range(len(next_waypoints) - 1):
-                    if i == 0:
-                        dist = self.distance(self.current_pose, next_waypoints[0])
-                    else:
-                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
-
-                    vel += self.accel_limit * dist
-                    vel = min(self.max_velocity, vel)
-                    vel = max(0.0, vel)
-                    self.set_waypoint_velocity(next_waypoints, i, vel)
+                self.speed_up(next_waypoints=next_waypoints)
             else:
-                # slowing down
-                tl_dist = max(1.0, self.distance(self.current_pose, self.waypoints[self.traffic]) - BUFFER)
+                # should we stop?
+                # do we even have enough distance to the traffic light to stop the car?
+                tl_dist = self.distance(self.current_pose, self.waypoints[self.traffic])
 
-                vel = self.current_velocity
-                decel = min(self.decel_limit, vel / tl_dist)
+                if tl_dist >= self.min_stopping_distance(self.current_velocity):
+                    self.is_braking = True
 
-                for i in range(len(next_waypoints) - 1):
-                    if i == 0:
-                        dist = self.distance(self.current_pose, next_waypoints[0])
-                    else:
-                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
-                    vel -= decel * dist
-                    if vel <= 0.447:
-                        vel = 0.0
-                    self.set_waypoint_velocity(next_waypoints, i, vel)
+                if self.is_braking:
+                    # yes we have determined we have enough distance to stop
+                    self.slow_down(tl_dist=tl_dist, next_waypoints=next_waypoints)
+                else:
+                    self.speed_up(next_waypoints=next_waypoints)
 
             return next_waypoints
+
+    def speed_up(self, next_waypoints):
+        vel = self.current_velocity
+        for i in range(len(next_waypoints) - 1):
+            if i == 0:
+                dist = self.distance(self.current_pose, next_waypoints[0])
+            else:
+                dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
+
+            vel += self.accel_limit * dist
+            vel = min(self.max_velocity, vel)
+            vel = max(0.0, vel)
+            self.set_waypoint_velocity(next_waypoints, i, vel)
+
+
+    def slow_down(self, tl_dist, next_waypoints):
+        tl_dist = max(1.0, tl_dist - BUFFER)
+
+        vel = self.current_velocity
+        decel = min(self.decel_limit, vel / tl_dist)
+
+        for i in range(len(next_waypoints) - 1):
+            if i == 0:
+                dist = self.distance(self.current_pose, next_waypoints[0])
+            else:
+                dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
+            vel -= decel * dist
+            if vel <= 0.447:
+                vel = 0.0
+            self.set_waypoint_velocity(next_waypoints, i, vel)
 
     def publish_final_waypoints(self, waypoints):
         lane = Lane()
