@@ -49,7 +49,7 @@ class WaypointUpdater(object):
         self.current_velocity = 0.0
         self.current_pose = None
         self.waypoints = None
-        self.traffic = None
+        self.traffic = -1
         self.final_waypoints = Lane()
         self.is_braking = False
 
@@ -151,7 +151,7 @@ class WaypointUpdater(object):
             end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
             next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
 
-            if self.traffic is None or self.traffic == -1:
+            if self.traffic == -1:
                 self.is_braking = False
                 # no red light : lets accelerate
                 vel = self.current_velocity
