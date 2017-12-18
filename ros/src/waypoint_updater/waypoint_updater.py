@@ -72,8 +72,9 @@ class WaypointUpdater(object):
         # Note that the publisher for /base_waypoints publishes only once
         # so we fill in the data only when it receives no prior waypoints info
         if self.waypoints is None:
+            kmph2mps = lambda velocity_kmph: (velocity_kmph * 1000.) / (60. * 60.)
             self.waypoints = msg.waypoints
-            self.max_velocity = rospy.get_param('wp_l_velocity')
+            self.max_velocity = kmph2mps(rospy.get_param('/waypoint_loader/velocity'))
 
     def traffic_cb(self, msg):
         self.traffic = msg.data
@@ -110,8 +111,8 @@ class WaypointUpdater(object):
 
     def prepare_lookahead_waypoints(self):
         if self.decel_limit is None or self.accel_limit is None:
-            self.accel_limit = math.fabs(rospy.get_param('dbw_accel_limit'))
-            self.decel_limit = math.fabs(rospy.get_param('dbw_decel_limit'))
+            self.accel_limit = math.fabs(rospy.get_param('/dbw_node/accel_limit'))
+            self.decel_limit = math.fabs(rospy.get_param('/dbw_node/decel_limit'))
             return None
 
         if self.waypoints is None or self.current_pose is None:
@@ -159,7 +160,7 @@ class WaypointUpdater(object):
                     if i == 0:
                         dist = self.distance(self.current_pose, next_waypoints[0])
                     else:
-                        dist = self.distance(next_waypoints[i-1].pose.pose, next_waypoints[i])
+                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
 
                     vel += self.accel_limit * dist
                     vel = min(self.max_velocity, vel)
@@ -177,7 +178,7 @@ class WaypointUpdater(object):
                     if i == 0:
                         dist = self.distance(self.current_pose, next_waypoints[0])
                     else:
-                        dist = self.distance(next_waypoints[i-1].pose.pose, next_waypoints[i])
+                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
                     vel -= decel * dist
                     if vel <= 0.447:
                         vel = 0.0
