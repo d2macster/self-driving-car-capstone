@@ -7,6 +7,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped
 from std_msgs.msg import Int32
 from styx_msgs.msg import Lane, Waypoint
 from itertools import islice, cycle
+from pid import PID
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -53,10 +54,14 @@ class WaypointUpdater(object):
         self.final_waypoints = Lane()
 
         self.max_velocity = None
+        self.target_velocity = None
         self.decel_limit = None
         self.accel_limit = None
 
         self.is_braking = False
+        self.pid_controller = PID(2.0, 0.005, 0.0)
+        self.prev_time = None
+
 
         rospy.spin()
 
@@ -136,6 +141,7 @@ class WaypointUpdater(object):
                 if dist < closest_dist:
                     closest_dist = dist
                     closest_wp_pos = i
+
             # check if we already passed the closest waypoint we found
             # get heading of closest waypoint
             theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, closest_wp_pos)
@@ -144,6 +150,19 @@ class WaypointUpdater(object):
             # check if we should skip the current closest waypoint (in case we passed it already)
             diff_angle = math.fabs(theta_car - theta_waypoint)
             # rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
+
+            # how far are we from the target waypoint path
+            waypoint_error = math.fabs(closest_dist * math.sin(diff_angle))
+
+            if self.prev_time:
+                # we have previous time tick
+                delta_t = float(rospy.get_time() - self.prev_time)
+                waypoint_error = self.pid_controller.step(error=waypoint_error, sample_time=delta_t)
+            self.target_velocity = max(0.447 * 5.0, self.max_velocity - waypoint_error)
+            self.target_velocity = min(self.target_velocity, self.max_velocity)
+            self.prev_time = rospy.get_time()
+
+
             if diff_angle > math.pi / 4.0:
                 # skip to next closest waypoint
                 # rospy.loginfo("closest waypoint skipped. Next closest one picked ...")  # debug only
@@ -186,7 +205,7 @@ class WaypointUpdater(object):
                 dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
 
             vel += self.accel_limit * dist
-            vel = min(self.max_velocity, vel)
+            vel = min(self.target_velocity, vel)
             vel = max(0.0, vel)
             self.set_waypoint_velocity(next_waypoints, i, vel)
 
