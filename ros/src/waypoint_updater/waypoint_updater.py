@@ -7,6 +7,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped
 from std_msgs.msg import Int32
 from styx_msgs.msg import Lane, Waypoint
 from itertools import islice, cycle
+from pid import PID
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -44,6 +45,8 @@ class WaypointUpdater(object):
         # Publisher
         # This topic: /final_waypoints is subscribed from node pure_pursuit in waypoint_follower package
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
+        self.driving_mode_pub = rospy.Publisher('driving_mode', Int32, queue_size=1)
+
 
         # Initialize important parameters
         self.current_velocity = 0.0
@@ -53,8 +56,14 @@ class WaypointUpdater(object):
         self.final_waypoints = Lane()
 
         self.max_velocity = None
+        self.target_velocity = None
         self.decel_limit = None
         self.accel_limit = None
+
+        self.is_braking = False
+        self.pid_controller = PID(2.0, 0.005, 0.0)
+        self.prev_time = None
+
 
         rospy.spin()
 
@@ -108,6 +117,10 @@ class WaypointUpdater(object):
         # get yaw angle (last sequence of returning list)
         return RPY[-1]
 
+    def min_stopping_distance(self, velocity):
+        t = 1.0*velocity/self.decel_limit
+        return 0.5*self.decel_limit*(t**2)
+
     def prepare_lookahead_waypoints(self):
         if self.decel_limit is None or self.accel_limit is None:
             self.accel_limit = math.fabs(rospy.get_param('/dbw_node/accel_limit'))
@@ -130,6 +143,7 @@ class WaypointUpdater(object):
                 if dist < closest_dist:
                     closest_dist = dist
                     closest_wp_pos = i
+
             # check if we already passed the closest waypoint we found
             # get heading of closest waypoint
             theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, closest_wp_pos)
@@ -138,6 +152,19 @@ class WaypointUpdater(object):
             # check if we should skip the current closest waypoint (in case we passed it already)
             diff_angle = math.fabs(theta_car - theta_waypoint)
             # rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
+
+            # how far are we from the target waypoint path
+            waypoint_error = math.fabs(closest_dist * math.sin(diff_angle))
+
+            if self.prev_time:
+                # we have previous time tick
+                delta_t = float(rospy.get_time() - self.prev_time)
+                waypoint_error = self.pid_controller.step(error=waypoint_error, sample_time=delta_t)
+            self.target_velocity = max(0.447 * 5.0, self.max_velocity - waypoint_error)
+            self.target_velocity = min(self.target_velocity, self.max_velocity)
+            self.prev_time = rospy.get_time()
+
+
             if diff_angle > math.pi / 4.0:
                 # skip to next closest waypoint
                 # rospy.loginfo("closest waypoint skipped. Next closest one picked ...")  # debug only
@@ -152,36 +179,54 @@ class WaypointUpdater(object):
 
             if self.traffic == -1:
                 # no red light : lets accelerate
-                vel = self.current_velocity
+                self.is_braking = False
 
-                for i in range(len(next_waypoints) - 1):
-                    if i == 0:
-                        dist = self.distance(self.current_pose, next_waypoints[0])
-                    else:
-                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
-
-                    vel += self.accel_limit * dist
-                    vel = min(self.max_velocity, vel)
-                    vel = max(0.0, vel)
-                    self.set_waypoint_velocity(next_waypoints, i, vel)
+                self.speed_up(next_waypoints=next_waypoints)
             else:
-                # slowing down
-                tl_dist = max(1.0, self.distance(self.current_pose, self.waypoints[self.traffic]) - BUFFER)
+                # should we stop?
+                # do we even have enough distance to the traffic light to stop the car?
+                tl_dist = self.distance(self.current_pose, self.waypoints[self.traffic])
 
-                vel = self.current_velocity
-                decel = min(self.decel_limit, vel / tl_dist)
+                if tl_dist >= self.min_stopping_distance(self.current_velocity):
+                    self.is_braking = True
 
-                for i in range(len(next_waypoints) - 1):
-                    if i == 0:
-                        dist = self.distance(self.current_pose, next_waypoints[0])
-                    else:
-                        dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
-                    vel -= decel * dist
-                    if vel <= 0.447:
-                        vel = 0.0
-                    self.set_waypoint_velocity(next_waypoints, i, vel)
+                if self.is_braking:
+                    # yes we have determined we have enough distance to stop
+                    self.slow_down(tl_dist=tl_dist, next_waypoints=next_waypoints)
+                else:
+                    self.speed_up(next_waypoints=next_waypoints)
 
             return next_waypoints
+
+    def speed_up(self, next_waypoints):
+        vel = self.current_velocity
+        for i in range(len(next_waypoints) - 1):
+            if i == 0:
+                dist = self.distance(self.current_pose, next_waypoints[0])
+            else:
+                dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
+
+            vel += self.accel_limit * dist
+            vel = min(self.target_velocity, vel)
+            vel = max(0.0, vel)
+            self.set_waypoint_velocity(next_waypoints, i, vel)
+
+
+    def slow_down(self, tl_dist, next_waypoints):
+        tl_dist = max(1.0, tl_dist - BUFFER)
+
+        vel = self.current_velocity
+        decel = min(self.decel_limit, vel / tl_dist)
+
+        for i in range(len(next_waypoints) - 1):
+            if i == 0:
+                dist = self.distance(self.current_pose, next_waypoints[0])
+            else:
+                dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
+            vel -= decel * dist
+            if vel <= 0.447:
+                vel = 0.0
+            self.set_waypoint_velocity(next_waypoints, i, vel)
 
     def publish_final_waypoints(self, waypoints):
         lane = Lane()
@@ -189,6 +234,10 @@ class WaypointUpdater(object):
         lane.header.stamp = rospy.Time(0)
         lane.waypoints = waypoints
         self.final_waypoints_pub.publish(lane)
+        if self.is_braking:
+            self.driving_mode_pub.publish(-1)
+        else:
+            self.driving_mode_pub.publish(1)
 
     def mph_to_mps(self, data):
         return data * 0.447
