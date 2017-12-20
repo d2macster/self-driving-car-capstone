@@ -13,7 +13,7 @@ from lowpass import LowPassFilter
 class Controller(object):
     def __init__(self, *args, **kwargs):
         self.pid_controller = PID(1.0, 0.005, 0.0)
-        self.brake_lpf = LowPassFilter(0.2, 0.1)
+        self.brake_lpf = LowPassFilter(2, 1)
 
         self.yaw_controller = YawController(
             wheel_base=kwargs['wheel_base'],
@@ -31,7 +31,7 @@ class Controller(object):
         total_vehicle_mass = kwargs['vehicle_mass'] + kwargs['fuel_capacity'] * GAS_DENSITY
         self.max_brake_torque = total_vehicle_mass * abs(kwargs['decel_limit']) * kwargs['wheel_radius']
 
-    def control(self, twist_cmd, current_velocity, dbw_enabled):
+    def control(self, twist_cmd, current_velocity, dbw_enabled, driving_mode):
         """
         :return: (throttle, brake, steer)
         """
@@ -61,6 +61,9 @@ class Controller(object):
             self.prev_time = rospy.get_time()
             return throttle, brake, steering
 
+        # if current_linear_velocity == 0:
+        #     self.pid_controller.reset()
+
         delta_v = desired_linear_velocity - current_linear_velocity
         delta_v = max(self.decel_limit, delta_v)
         delta_v = min(delta_v, self.accel_limit)
@@ -71,20 +74,43 @@ class Controller(object):
             error=delta_v,
             sample_time=delta_t
         )
+
         # throttle : [0 .. 1]
         # brake : torque (N*m) = F(acceleration, weight, wheel radius)
 
-        if desired_linear_velocity == 0:
-            control = -1
+        action = 0
 
-        if control > 0:
+        # lets prevent ping-pong between throttle and brake
+        # when we try to maintain requested speed
+
+        if driving_mode == 1:
+            # path planner is accelerating the car
+            if delta_v > 0:
+                # activate throttle right away if we are below desired speed limit
+                action = 1
+            if delta_v <= -0.2:
+                # activate brake only if the speed difference is bigger that
+                action = -1
+
+        if driving_mode == -1:
+            # path planner is slowing the car
+            if delta_v < -0.1:
+                # let the car slow down a bit on its own
+                # if this is not enough - the activate brake
+                action = -1
+            if delta_v >= 0.2:
+                # we slowed down too much - lets spped up a bit
+                action = 1
+
+        if desired_linear_velocity == 0:
+            action = -1
+
+        if action > 0:
             throttle = math.tanh(control)
             throttle = max(0.0, min(THROTTLE_MAX, throttle))
-            brake = 0.0
-        else:
-            throttle = 0.0
+        if action < 0:
+            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(control))
 
-            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(delta_v))
             if desired_linear_velocity <= ONE_MPH * 1.0:
                 brake = 0.4*self.max_brake_torque
                 if current_linear_velocity <= ONE_MPH * 5.0:
