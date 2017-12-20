@@ -94,7 +94,6 @@ class TLDetector(object):
             self.last_state = self.state
             light_wp = light_wp if state == TrafficLight.RED or state == TrafficLight.YELLOW else -1
             self.last_wp = light_wp
-            rospy.loginfo(light_wp)
             self.upcoming_red_light_pub.publish(Int32(light_wp))
         else:
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
@@ -175,10 +174,8 @@ class TLDetector(object):
                         light = self.lights[index]
 
         if light:
-            state = light.state
-            # for now bypass classifier as improve it
+            correct_state = light.state
             state = self.get_light_state(light)
-            # rospy.loginfo(state)
             # for saving imgs from sim
             # self.camera_image.encoding = "rgb8";
             # cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")

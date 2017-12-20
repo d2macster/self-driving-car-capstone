@@ -15,7 +15,7 @@ class TLClassifier(object):
         #TODO load classifier
         # load the graph
         
-        self.model = load_model(DIR_PATH + '/sim-classifier.h5')
+        self.model = load_model(DIR_PATH + '/sim-classifier-8.h5')
         self.model._make_predict_function() 
         self.graph = tf.get_default_graph()
 
@@ -38,13 +38,14 @@ class TLClassifier(object):
         # prediction key
         classification_tl_key = {0: TrafficLight.RED, 1: TrafficLight.YELLOW, 2: TrafficLight.GREEN, 4: TrafficLight.UNKNOWN}
 
-        resized = cv2.resize(image, (32,64))
+        resized = cv2.resize(image, (80,60))/255.
 
         test_img = np.array([resized])
         # run the prediction
         with self.graph.as_default():
             model_predict = self.model.predict(test_img)
-            self.light_state = classification_tl_key[np.argmax(model_predict[0])]
+            if model_predict[0][np.argmax(model_predict[0])] > 0.5:
+                self.light_state = classification_tl_key[np.argmax(model_predict[0])]
 
 
         return self.light_state
