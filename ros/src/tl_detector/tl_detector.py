@@ -9,10 +9,16 @@ from cv_bridge import CvBridge
 from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
+import math
 import yaml
+import cv2
+from random import randint
+import os
 
 STATE_COUNT_THRESHOLD = 3
 LOOKAHEAD_WPS = 200
+
+DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 class TLDetector(object):
     def __init__(self):
@@ -71,7 +77,9 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
+
         light_wp, state = self.process_traffic_lights()
+
 
         '''
         Publish upcoming red lights at camera frequency.
@@ -160,13 +168,19 @@ class TLDetector(object):
                 stop_line_wp = self.get_closest_waypoint(stop_line)
                 num_wp_ahead = stop_line_wp - car_position
                 if (stop_line_wp > car_position) and ( num_wp_ahead < light_wp ) and (num_wp_ahead < 200):
-                    light_wp = stop_line_wp
-                    light = self.lights[index]
+                    # only try to classify lights that are a reasonable distance away
+                    if ( math.sqrt( (self.pose.pose.position.x - stop_line[0])**2 + (self.pose.pose.position.y - stop_line[1])**2) < 100 ):
+                        light_wp = stop_line_wp
+                        light = self.lights[index]
 
         if light:
-            state = light.state
-            # for now bypass classifier as improve it
-            # state = self.get_light_state(light)
+            correct_state = light.state
+            state = self.get_light_state(light)
+            # for saving imgs from sim
+            # self.camera_image.encoding = "rgb8";
+            # cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
+            # rand_img_int = randint(0,100)
+            # cv2.imwrite(DIR_PATH + '/light_classification/data/camera_image' + str(state) + "-" + str(rand_img_int) + '.jpg', cv_image)
             return light_wp, state
         return -1, TrafficLight.UNKNOWN
 
