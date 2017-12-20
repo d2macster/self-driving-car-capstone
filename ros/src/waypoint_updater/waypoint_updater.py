@@ -45,6 +45,8 @@ class WaypointUpdater(object):
         # Publisher
         # This topic: /final_waypoints is subscribed from node pure_pursuit in waypoint_follower package
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
+        self.driving_mode_pub = rospy.Publisher('driving_mode', Int32, queue_size=1)
+
 
         # Initialize important parameters
         self.current_velocity = 0.0
@@ -232,6 +234,10 @@ class WaypointUpdater(object):
         lane.header.stamp = rospy.Time(0)
         lane.waypoints = waypoints
         self.final_waypoints_pub.publish(lane)
+        if self.is_braking:
+            self.driving_mode_pub.publish(-1)
+        else:
+            self.driving_mode_pub.publish(1)
 
     def mph_to_mps(self, data):
         return data * 0.447

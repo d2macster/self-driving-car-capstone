@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import rospy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int32
 from dbw_mkz_msgs.msg import ThrottleCmd, SteeringCmd, BrakeCmd, SteeringReport
 from geometry_msgs.msg import TwistStamped
 import math
@@ -70,12 +70,17 @@ class DBWNode(object):
         self.dbw_enabled = False
         self.current_velocity = None
         self.twist_cmd = None
+        self.driving_mode = None
 
         rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_enabled_cb)
+        rospy.Subscriber('/driving_mode', Int32, self.driving_mode_cb)
 
         self.loop()
+
+    def driving_mode_cb(self, msg):
+        self.driving_mode = msg.data
 
     def current_velocity_cb(self, msg):
         self.current_velocity = msg
@@ -94,7 +99,8 @@ class DBWNode(object):
                 throttle, brake, steering = self.controller.control(
                     twist_cmd=self.twist_cmd,
                     current_velocity=self.current_velocity,
-                    dbw_enabled=self.dbw_enabled)
+                    dbw_enabled=self.dbw_enabled,
+                    driving_mode=self.driving_mode)
 
                 self.publish(throttle, brake, steering)
 
