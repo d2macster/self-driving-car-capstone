@@ -64,6 +64,8 @@ class WaypointUpdater(object):
         self.pid_controller = PID(2.0, 0.005, 0.0)
         self.prev_time = None
 
+        self.car_wp_pos = None
+
 
         rospy.spin()
 
@@ -121,16 +123,21 @@ class WaypointUpdater(object):
         t = 1.0*velocity/self.decel_limit
         return 0.5*self.decel_limit*(t**2)
 
-    def prepare_lookahead_waypoints(self):
-        if self.decel_limit is None or self.accel_limit is None:
-            self.accel_limit = math.fabs(rospy.get_param('/dbw_node/accel_limit'))
-            self.decel_limit = math.fabs(rospy.get_param('/dbw_node/decel_limit'))
-            return None
-
+    def get_closest_wp_pos(self):
         if self.waypoints is None or self.current_pose is None:
             rospy.loginfo("Base waypoint or current pose info are missing. Not publishing waypoints ...")
-            return None
-        else:
+            return (None, None, None)
+
+        L = len(self.waypoints)
+
+        if self.car_wp_pos is not None:
+            closest_dist = self.distance(self.current_pose, self.waypoints[self.car_wp_pos % L])
+            if closest_dist >= 2.0:
+                self.car_wp_pos = None
+
+        if self.car_wp_pos is None:
+            # no previous location stored
+            # do the brute-force run
             # find waypoint that is closest to the car
             closest_dist = float('inf')  # initialize with very large value
             closest_wp_pos = None  # closest waypoint's position (among the waypoint list)
@@ -151,52 +158,85 @@ class WaypointUpdater(object):
             theta_car = self.car_pose_heading(self.current_pose)
             # check if we should skip the current closest waypoint (in case we passed it already)
             diff_angle = math.fabs(theta_car - theta_waypoint)
-            # rospy.loginfo("Theta Waypoint: %.3f, Theta Car: %.3f, Diff: %.3f" % (theta_waypoint, theta_car, diff_angle))
-
-            # how far are we from the target waypoint path
-            waypoint_error = math.fabs(closest_dist * math.sin(diff_angle))
-
-            if self.prev_time:
-                # we have previous time tick
-                delta_t = float(rospy.get_time() - self.prev_time)
-                waypoint_error = self.pid_controller.step(error=waypoint_error, sample_time=delta_t)
-            self.target_velocity = max(0.447 * 5.0, self.max_velocity - waypoint_error)
-            self.target_velocity = min(self.target_velocity, self.max_velocity)
-            self.prev_time = rospy.get_time()
-
 
             if diff_angle > math.pi / 4.0:
                 # skip to next closest waypoint
-                # rospy.loginfo("closest waypoint skipped. Next closest one picked ...")  # debug only
                 closest_wp_pos += 1
-            # else:
-            # rospy.loginfo("current closest waypoint maintained ...")  # debug only
 
-            # create list of waypoints starting from index: closest_wp_ros
-            seq = cycle(self.waypoints)  # loop string of waypoints
-            end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
-            next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
+            self.car_wp_pos = closest_wp_pos
 
-            if self.traffic == -1:
-                # no red light : lets accelerate
-                self.is_braking = False
+            return (self.car_wp_pos, closest_dist, diff_angle)
 
-                self.speed_up(next_waypoints=next_waypoints)
+        # start from the last best position
+        closest_dist = self.distance(self.current_pose, self.waypoints[self.car_wp_pos % L])
+        theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, self.car_wp_pos)
+        theta_car = self.car_pose_heading(self.current_pose)
+        diff_angle = math.fabs(theta_car - theta_waypoint)
+
+        for i in range(len(self.waypoints)):
+            p_dist = self.distance(self.current_pose, self.waypoints[(self.car_wp_pos + 1) % L])
+            if p_dist < closest_dist:
+                self.car_wp_pos = (self.car_wp_pos + 1) % L
+                closest_dist = p_dist
+                theta_waypoint = self.closest_waypoint_heading(self.current_pose, self.waypoints, self.car_wp_pos)
+                theta_car = self.car_pose_heading(self.current_pose)
+                diff_angle = math.fabs(theta_car - theta_waypoint)
             else:
-                # should we stop?
-                # do we even have enough distance to the traffic light to stop the car?
-                tl_dist = self.distance(self.current_pose, self.waypoints[self.traffic])
+                break
 
-                if tl_dist >= self.min_stopping_distance(self.current_velocity):
-                    self.is_braking = True
+        if diff_angle > math.pi / 4.0:
+            # skip to next closest waypoint
+            self.car_wp_pos = (self.car_wp_pos + 1) % L
 
-                if self.is_braking:
-                    # yes we have determined we have enough distance to stop
-                    self.slow_down(tl_dist=tl_dist, next_waypoints=next_waypoints)
-                else:
-                    self.speed_up(next_waypoints=next_waypoints)
+        return (self.car_wp_pos, closest_dist, diff_angle)
 
-            return next_waypoints
+
+    def prepare_lookahead_waypoints(self):
+        # reading parameters set for dbw_node
+        if self.decel_limit is None or self.accel_limit is None:
+            self.accel_limit = math.fabs(rospy.get_param('/dbw_node/accel_limit'))
+            self.decel_limit = math.fabs(rospy.get_param('/dbw_node/decel_limit'))
+            return None
+
+        closest_wp_pos, closest_dist, diff_angle = self.get_closest_wp_pos()
+        if closest_wp_pos is None:
+            return None
+
+        # how far are we from the target waypoint path
+        waypoint_error = math.fabs(closest_dist * math.sin(diff_angle))
+
+        if self.prev_time:
+            # we have previous time tick
+            delta_t = float(rospy.get_time() - self.prev_time)
+            waypoint_error = self.pid_controller.step(error=waypoint_error, sample_time=delta_t)
+        self.target_velocity = max(0.447 * 5.0, self.max_velocity - waypoint_error)
+        self.target_velocity = min(self.target_velocity, self.max_velocity)
+        self.prev_time = rospy.get_time()
+
+        # create list of waypoints starting from index: closest_wp_ros
+        seq = cycle(self.waypoints)  # loop string of waypoints
+        end_pos = closest_wp_pos + LOOKAHEAD_WPS - 1  # to build waypoint list with a fixed size
+        next_waypoints = list(islice(seq, closest_wp_pos, end_pos))  # list of lookahead waypoints
+
+        if self.traffic == -1:
+            # no red light : lets accelerate
+            self.is_braking = False
+            self.speed_up(next_waypoints=next_waypoints)
+        else:
+            # should we stop?
+            # do we even have enough distance to the traffic light to stop the car?
+            tl_dist = self.distance(self.current_pose, self.waypoints[self.traffic])
+
+            if tl_dist >= self.min_stopping_distance(self.current_velocity):
+                self.is_braking = True
+
+            if self.is_braking:
+                # yes we have determined we have enough distance to stop
+                self.slow_down(tl_dist=tl_dist, next_waypoints=next_waypoints)
+            else:
+                self.speed_up(next_waypoints=next_waypoints)
+
+        return next_waypoints
 
     def speed_up(self, next_waypoints):
         vel = self.current_velocity
