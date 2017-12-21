@@ -13,7 +13,12 @@ from lowpass import LowPassFilter
 class Controller(object):
     def __init__(self, *args, **kwargs):
         self.pid_controller = PID(1.0, 0.005, 0.0)
-        self.brake_lpf = LowPassFilter(2, 1)
+        # usually we cannot change brake or throttle instantaneously
+        # thus adding lpf to mimic real life human behavior
+        # a = 0.14, b = 0.86
+        self.brake_lpf = LowPassFilter(6, 1)
+        self.throttle_lpf = LowPassFilter(6, 1)
+
 
         self.yaw_controller = YawController(
             wheel_base=kwargs['wheel_base'],
@@ -99,7 +104,7 @@ class Controller(object):
                 # if this is not enough - the activate brake
                 action = -1
             if delta_v >= 0.2:
-                # we slowed down too much - lets spped up a bit
+                # we slowed down too much - lets speed up a bit
                 action = 1
 
         if desired_linear_velocity == 0:
@@ -108,17 +113,22 @@ class Controller(object):
         if action > 0:
             throttle = math.tanh(control)
             throttle = max(0.0, min(THROTTLE_MAX, throttle))
+            throttle = self.throttle_lpf.filt(throttle)
+
+            self.brake_lpf.filt(0.0)
+
         if action < 0:
-            brake = 0.4*self.max_brake_torque*math.tanh(math.fabs(control))
+            brake = 0.2*self.max_brake_torque*math.tanh(math.fabs(control))
 
             if desired_linear_velocity <= ONE_MPH * 1.0:
                 brake = 0.4*self.max_brake_torque
-                if current_linear_velocity <= ONE_MPH * 5.0:
+                if current_linear_velocity <= ONE_MPH * 1.0:
                     brake = self.max_brake_torque
             brake = min(brake, self.max_brake_torque)
             brake = max(1.0, brake)
 
             brake = self.brake_lpf.filt(brake)
+            self.throttle_lpf.filt(0.0)
 
         self.prev_throttle = throttle
 

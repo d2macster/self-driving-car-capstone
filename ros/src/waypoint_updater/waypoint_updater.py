@@ -255,10 +255,14 @@ class WaypointUpdater(object):
 
 
     def slow_down(self, tl_dist, next_waypoints):
-        tl_dist = max(1.0, tl_dist - BUFFER)
+        tl_dist_effective = max(1.0, tl_dist - BUFFER)
 
         vel = self.current_velocity
-        decel = min(self.decel_limit, vel / tl_dist)
+        decel = min(self.decel_limit, vel / tl_dist_effective)
+
+        # if we are not close enough to the traffic light,
+        # allow some slow advancement towards the goal
+        min_v = MPH_TO_MPS * 3.0 if tl_dist > BUFFER else 0.0
 
         for i in range(len(next_waypoints) - 1):
             if i == 0:
@@ -266,6 +270,8 @@ class WaypointUpdater(object):
             else:
                 dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
             vel -= decel * dist
+            vel = max(min_v, vel)
+
             if vel <= MPH_TO_MPS:
                 vel = 0.0
             self.set_waypoint_velocity(next_waypoints, i, vel)
