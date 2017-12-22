@@ -1,4 +1,42 @@
-This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
+# Programming a Real Self-Driving Car:
+## System Integration Project
+
+[image1]: ./imgs/Carla.png "Image 1"   
+[image2]: ./imgs/project-rosgraph.png "Image 2"   
+
+This is the project repo of team Laters for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. 
+
+The goal of the project is to fully implement with ROS the main modules of an autonomous vehicle: Perception, Planning and Control, which will be tested on Udacity´s Self Driving Car _´Carla´_ around a test track using waypoint navigation. 
+
+For validation the code was tested using a simulator where the car drives around a highway test track with traffic lights.
+
+## Carla: The Test Car
+![alt text][image1]
+
+The project will be evaluated on Carla, an autonomous Lincoln MKZ, at Udacity´s test site in Palo Alto, California. The operating system Carla runs on is Ubuntu Linux. 
+
+Udacity Self-Driving Car Harware Specs:
+* 31.4 GiB Memory
+* Intel Core i7-6700K CPU @ 4 GHz x 8
+* TITAN X Graphics
+* 64-bit OS
+
+## The Team: Laters
+
+|           | Name                     |            GitHub                         |
+| --------- | -------------------------| :----------------------------------------:|
+| Team Lead | Andrii Cherniak          |            https://github.com/d2macster   |
+|           | Tharatch Sirinukulwattana|            https://github.com/TharatchSiri|
+|           | Melanie Plaza            |            https://github.com/mplaza      |
+|           | Alexander Epifanov       |                                           |
+|           | Igor Molina              |            https://github.com/igolas0     |
+
+## Project Overview
+
+![alt text][image2]
+
+The submitted code is implemented in ROS. For this project we mainly use __rospy__, which is a pure Python client library for ROS and enables Python programmers to interface with ROS Topics, Services and Parameters.
+
 
 ### Native Installation
 
