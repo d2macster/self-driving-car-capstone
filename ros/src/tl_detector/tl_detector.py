@@ -26,6 +26,7 @@ class TLDetector(object):
 
         self.pose = None
         self.waypoints = None
+        self.waypoints_L = None
         self.camera_image = None
         self.lights = []
 
@@ -33,6 +34,7 @@ class TLDetector(object):
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
         rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
         rospy.Subscriber('/image_color', Image, self.image_cb)
+        rospy.Subscriber('/car_waypoint_id', Int32, self.car_waypoint_id_cb)
 
         '''
         /vehicle/traffic_lights provides you with the location of the traffic light in 3D map space and
@@ -55,6 +57,7 @@ class TLDetector(object):
         self.last_state = TrafficLight.UNKNOWN
         self.last_wp = -1
         self.state_count = 0
+        self.car_waypoint_id = None
 
         self.stop_line_cache = []
 
@@ -66,11 +69,15 @@ class TLDetector(object):
 
         rospy.spin()
 
+    def car_waypoint_id_cb(self, msg):
+        self.car_waypoint_id = msg.data
+
     def pose_cb(self, msg):
         self.pose = msg
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
+        self.waypoints_L = len(self.waypoints.waypoints)
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
@@ -116,23 +123,12 @@ class TLDetector(object):
             closest_index = None
             min_dist = 99999
 
-            for i in range(len(self.waypoints.waypoints)):
+            for i in range(self.waypoints_L):
                 waypoint_x, waypoint_y = self.waypoints.waypoints[i].pose.pose.position.x, self.waypoints.waypoints[i].pose.pose.position.y
                 dist = (waypoint_x - position_x)**2 + (waypoint_y - position_y)**2
                 if dist < min_dist:
                     min_dist = dist
                     closest_index = i
-
-        """Identifies the closest path waypoint to the given position
-            https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
-        Args:
-            pose (Pose): position to match a waypoint to
-
-        Returns:
-            int: index of the closest waypoint in self.waypoints
-
-        """
-        #TODO implement
         return closest_index
 
     def get_light_state(self, light):
@@ -168,13 +164,15 @@ class TLDetector(object):
 
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
-        if(self.pose and self.waypoints and self.light_classifier):
-            car_position = self.get_closest_waypoint([self.pose.pose.position.x, self.pose.pose.position.y])
-            
+        if(self.pose and self.waypoints and self.light_classifier and self.car_waypoint_id):
+
             light_wp = 9999
             for index, stop_line, stop_line_wp in self.stop_line_cache:
-                num_wp_ahead = stop_line_wp - car_position
-                if (stop_line_wp > car_position) and ( num_wp_ahead < light_wp ) and (num_wp_ahead < 200):
+                num_wp_ahead = stop_line_wp - self.car_waypoint_id
+                if num_wp_ahead < 0:
+                    num_wp_ahead += self.waypoints_L
+
+                if (num_wp_ahead < 200):
                     # only try to classify lights that are a reasonable distance away
                     if ( math.sqrt( (self.pose.pose.position.x - stop_line[0])**2 + (self.pose.pose.position.y - stop_line[1])**2) < 100 ):
                         light_wp = stop_line_wp

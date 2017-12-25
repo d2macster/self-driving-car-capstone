@@ -26,6 +26,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 200  # Number of waypoints we will publish. You can change this number
 BUFFER = 5
+MPH_TO_MPS = 0.447
 
 
 class WaypointUpdater(object):
@@ -46,6 +47,7 @@ class WaypointUpdater(object):
         # This topic: /final_waypoints is subscribed from node pure_pursuit in waypoint_follower package
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
         self.driving_mode_pub = rospy.Publisher('driving_mode', Int32, queue_size=1)
+        self.car_waypoint_id_pub = rospy.Publisher('car_waypoint_id', Int32, queue_size=1)
 
 
         # Initialize important parameters
@@ -209,7 +211,7 @@ class WaypointUpdater(object):
             # we have previous time tick
             delta_t = float(rospy.get_time() - self.prev_time)
             waypoint_error = self.pid_controller.step(error=waypoint_error, sample_time=delta_t)
-        self.target_velocity = max(0.447 * 5.0, self.max_velocity - waypoint_error)
+        self.target_velocity = max(MPH_TO_MPS * 5.0, self.max_velocity - waypoint_error)
         self.target_velocity = min(self.target_velocity, self.max_velocity)
         self.prev_time = rospy.get_time()
 
@@ -253,10 +255,14 @@ class WaypointUpdater(object):
 
 
     def slow_down(self, tl_dist, next_waypoints):
-        tl_dist = max(1.0, tl_dist - BUFFER)
+        tl_dist_effective = max(1.0, tl_dist - BUFFER)
 
         vel = self.current_velocity
-        decel = min(self.decel_limit, vel / tl_dist)
+        decel = min(self.decel_limit, vel / tl_dist_effective)
+
+        # if we are not close enough to the traffic light,
+        # allow some slow advancement towards the goal
+        min_v = MPH_TO_MPS * 3.0 if tl_dist > BUFFER else 0.0
 
         for i in range(len(next_waypoints) - 1):
             if i == 0:
@@ -264,7 +270,9 @@ class WaypointUpdater(object):
             else:
                 dist = self.distance(next_waypoints[i - 1].pose.pose, next_waypoints[i])
             vel -= decel * dist
-            if vel <= 0.447:
+            vel = max(min_v, vel)
+
+            if vel <= MPH_TO_MPS:
                 vel = 0.0
             self.set_waypoint_velocity(next_waypoints, i, vel)
 
@@ -274,13 +282,12 @@ class WaypointUpdater(object):
         lane.header.stamp = rospy.Time(0)
         lane.waypoints = waypoints
         self.final_waypoints_pub.publish(lane)
-        if self.is_braking:
-            self.driving_mode_pub.publish(-1)
-        else:
-            self.driving_mode_pub.publish(1)
 
-    def mph_to_mps(self, data):
-        return data * 0.447
+        self.driving_mode_pub.publish(-1 if self.is_braking else 1)
+
+        if self.car_wp_pos is not None:
+            self.car_waypoint_id_pub.publish(self.car_wp_pos)
+
 
     def RPY_from_quaternion(self, orientation):
         x, y, z, w = orientation.x, orientation.y, orientation.z, orientation.w
