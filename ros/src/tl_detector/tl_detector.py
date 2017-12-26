@@ -8,11 +8,8 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from light_classification.tl_classifier import TLClassifier
 import tf
-import cv2
 import math
 import yaml
-import cv2
-from random import randint
 import os
 
 STATE_COUNT_THRESHOLD = 3
@@ -28,11 +25,10 @@ class TLDetector(object):
         self.waypoints = None
         self.waypoints_L = None
         self.camera_image = None
-        self.lights = []
+        # self.lights = []
 
         rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
-        rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
         rospy.Subscriber('/image_color', Image, self.image_cb)
         rospy.Subscriber('/car_waypoint_id', Int32, self.car_waypoint_id_cb)
 
@@ -78,9 +74,6 @@ class TLDetector(object):
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
         self.waypoints_L = len(self.waypoints.waypoints)
-
-    def traffic_cb(self, msg):
-        self.lights = msg.lights
 
     def image_cb(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
@@ -131,11 +124,8 @@ class TLDetector(object):
                     closest_index = i
         return closest_index
 
-    def get_light_state(self, light):
+    def get_light_state(self):
         """Determines the current color of the traffic light
-
-        Args:
-            light (TrafficLight): light to classify
 
         Returns:
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
@@ -144,7 +134,7 @@ class TLDetector(object):
         if(not self.has_image):
             self.prev_light_loc = None
             return False
-        self.camera_image.encoding = "rgb8";
+        self.camera_image.encoding = "rgb8"
 
         cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
 
@@ -160,13 +150,10 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        light = None
+        light_wp = None
 
-        # List of positions that correspond to the line to stop in front of for a given intersection
-        stop_line_positions = self.config['stop_line_positions']
-        if(self.pose and self.waypoints and self.light_classifier and self.car_waypoint_id):
+        if(self.pose and self.waypoints and self.car_waypoint_id):
 
-            light_wp = 9999
             for index, stop_line, stop_line_wp in self.stop_line_cache:
                 num_wp_ahead = stop_line_wp - self.car_waypoint_id
                 if num_wp_ahead < 0:
@@ -176,11 +163,9 @@ class TLDetector(object):
                     # only try to classify lights that are a reasonable distance away
                     if ( math.sqrt( (self.pose.pose.position.x - stop_line[0])**2 + (self.pose.pose.position.y - stop_line[1])**2) < 100 ):
                         light_wp = stop_line_wp
-                        light = self.lights[index]
 
-        if light:
-            correct_state = light.state
-            state = self.get_light_state(light)
+        if light_wp is not None:
+            state = self.get_light_state()
             # for saving imgs from sim
             # self.camera_image.encoding = "rgb8";
             # cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
