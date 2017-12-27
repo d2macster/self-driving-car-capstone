@@ -67,18 +67,19 @@ As a classifier for the traffic detection node we use a Faster R-CNN Resnet 101 
 
 The Traffic Light Detection Node is implemented [here](./ros/src/tl_detector/tl_detector.py).
 
-After initialization this Node subscribes to the following topics: `/current_pose`, `/base_waypoints`, `/image_color` and `/car_waypoint_id`  (code lines ... to ...). Then we search for the waypoint of the first traffic lights stop ahead (code lines ... to ...). 
+After initialization this Node subscribes to the following topics: `/current_pose`, `/base_waypoints`, `/image_color` and `/car_waypoint_id`  (code lines 30 to 33). Then, after defining some important variables, we search for the waypoint of the first traffic lights stop ahead (code lines 62 to 64). 
 
-Next the function _image_cb()_ identifies red lights in the incoming camera image and publishes the index of the waypoint closest to the red light's stop line to /traffic_waypoint. It publishes upcoming red lights at camera frequency. Each predicted state has to occur `STATE_COUNT_THRESHOLD` number of times (defined in line ...) until we start using it. Otherwise the previous stable state is used (lines of code ... to ...).
+Next the function `image_cb()` (lines 78 to108) identifies red lights in the incoming camera image and publishes the index of the waypoint closest to the red light's stop line to /traffic_waypoint. It publishes upcoming red lights at camera frequency. Each predicted state has to occur `STATE_COUNT_THRESHOLD` number of times (defined in line 16) until we start using it. Otherwise the previous stable state is used.
 
-To achieve this the helper function `process_traffic_lights()` is used, which finds closest visible traffic light, if one exists, and determines its location and color. It returns the integer index of the waypoint closest to the upcoming stop line at a traffic light (-1 if none exists) and the color index of the detected traffic light if any (0: RED, 1: YELLOW, 2: GREEN, 4: UNKNOWN). See lines of code .. to ....
-In line ... we also make use of the imported `TL_classifier` function inside of the `tl_classifier.py` script which you can find  [here](./light_classification/tl_classifier.py). It loads with Keras the pre-trained model to classify the incoming images and returns the color index of the detected color or returns unknown if nothing is detected.
+To achieve this the helper function `process_traffic_lights()` is used (starting with line 144), which finds closest visible traffic light, if one exists, and determines its location and color. It returns the integer index of the waypoint closest to the upcoming stop line at a traffic light (-1 if none exists) and the color index of the detected traffic light if any (0: RED, 1: YELLOW, 2: GREEN, 4: UNKNOWN). 
+
+In line 142 we also make use of the imported `TL_classifier` function inside of the `tl_classifier.py` script which you can find  [here](./ros/src/tl_detector/light_classification/tl_classifier.py). It loads with Keras the pre-trained model to classify the incoming images and returns the color index of the detected color or returns unknown if nothing is detected.
 
 This will make up for the Perception Module. Next we will visit the Planning Module.
  
 #### 2.1 Waypoint Loader (Planning Module)
 
-The Waypointer Loader Node is implemented in [./ros/src_waypointloader/waypoint_loader.py](./ros/src_waypointloader/waypoint_loader.py). There the node gets initizialized and publishes to the /base_waypoints topic messages in the `Lane` format defined in [./ros/src/styx_msgs/msg/Lane.msg](./ros/src/styx_msgs/msg/Lane.msg).
+The Waypointer Loader Node is implemented in [./ros/src/waypoint_loader/waypoint_loader.py](./ros/src/waypoint_loader/waypoint_loader.py). There the node gets initizialized and publishes to the `/base_waypoints` topic messages in the `Lane` format defined in [./ros/src/styx_msgs/msg/Lane.msg](./ros/src/styx_msgs/msg/Lane.msg).
   
 In a nutshell the `waypoint_loader` Node loads the programmed waypoints for the car to follow around the track (line 26) and the default cruising speed (via the ROS parameter `~velocity` - see line 25). In line 26 the function `new_waypoint_loader()` is called which loads and publishes the waypoints with the default cruise velocity attached to them. 
   
@@ -88,17 +89,17 @@ Also inside of `waypoint_loader` additional helper functions (mainly for unit co
 
 This [node](./ros/src/waypoint_updater/waypoint_updater.py) will publish waypoints from the car's current position to some `x` distance ahead. It will also consider traffic lights and set target speeds (attached to waypoints) accordingly to be able to adapt: meaning accelerate, stop at traffic lights or cruise depending of the data coming from the Perception Module.
 
-We initialize the node (line ...) and subscribe to `/current_pose`, `/base_waypoints`, `/traffic_waypoints` and `/current_velocity` topics (lines ... to ...). Then in lines ... to ... we publish the `/final_waypoints` for the Control Module, the `/driving_mode_pub` and also the `/car_waypoint_id_pub`. Also in lines ... to ... we already defined and set important parameters. `LOOKAHEAD_WPS` determines the number of waypoints ahead of the vehicle to be published for the Control Module. `BUFFER` will be used to parametrize the deceleration process just before stopping at red lights. The car will decelerate smoothly and cruise at 3mph the final yards until the buffer distance before the stopping line is reached and then finally stops.
+We initialize the node (line 34) and subscribe to `/current_pose`, `/base_waypoints`, `/traffic_waypoints` and `/current_velocity` topics (lines 37 to 40). Then in lines 48 to 50 we define the topics we want to publish: `/final_waypoints` for the Control Module, `/driving_mode_pub` and `/car_waypoint_id_pub`. Also in lines 27 to 29 we already defined and set important parameters. `LOOKAHEAD_WPS` determines the number of waypoints ahead of the vehicle to be published for the Control Module. `BUFFER` will be used to parametrize the deceleration process just before stopping at red lights. The car will decelerate smoothly and cruise at 3mph the final yards until the buffer distance before the stopping line is reached and then finally stops.
 
-From line ... to ... we initialize further relevant parameters. In line 74 & 75 we call `current_velocity_cb()` and query the current velocity when accessing the subscribed topic `/current_velocity.` Then in lines 77 to 81 function `pose_cb()` returns the current position of the car in the environment when querying the `/current_pose` topic and publishes the previously described topics to be published in this node. Furthermore `waypoints_cb()` loads the basic path to follow coming from the `waypoint_loader` Node only if it has not been done already (loads only once) and `traffic_cb()` returns the index of the waypoint to stop at if a red or yellow light is detected (this information comes from Perception via the `/traffic_waypoint` topic).
+From line 54 to 69 we initialize further relevant parameters. In line 74 & 75 we call `current_velocity_cb()` and query the current velocity when accessing the subscribed topic `/current_velocity.` Then in lines 77 to 81 function `pose_cb()` returns the current position of the car in the environment when querying the `/current_pose` topic and publishes the previously described topics to be published in this node. Furthermore `waypoints_cb()` loads the basic path to follow coming from the `waypoint_loader` Node only if it has not been done already (loads only once) and `traffic_cb()` returns the index of the waypoint to stop at if a red or yellow light is detected (this information comes from Perception via the `/traffic_waypoint` topic).
 
 Next from lines 100 to 193 we define some helper functions which we will not describe in detail, but we proceed to explain the main logic in this node which happens in `prepare_lookahead_waypoints()`. 
 
-First we access the accelaration and deceleration limits via ROS parameters  (lines ... to ...). Then in lines ... to ... we calculate the distance from current position to the next waypoint ahead and adjust the target velocity accordingly. After that we set the array `next_waypoints` to the 200 waypoints (or whatever the number we set the variable `LOOKAHEAD_WPS` to) of the path that are directly situated ahead of the car (lines ... to ...).
+First we access the accelaration and deceleration limits via ROS parameters  (lines 198 to 201). Then in lines 203 to 216 we calculate the distance from current position to the next waypoint ahead and adjust the target velocity accordingly. For this purpose we use a PID Controller (implemented [here](./ros/src/waypoint_updater/pid.py)) to slow down the car if it deviates much from the trajectory defined by the waypoints, like passing a sharp turn. After that we set the array `next_waypoints` to the 200 waypoints (or whatever the number we set the variable `LOOKAHEAD_WPS` to) of the path that are directly situated ahead of the car (lines 219 to 221).
 
-From lines ... to ... we define how to behave based on upcoming traffic light detections. If no red or yellow lights are detected (in a reasonable distance in front of the car) we will proceed to speed up without violating the incoming cruising speed via ROS parameter or max speed limit. Else we will decelerate and stop at the stopping line if the braking distance is long enough to guarantee a safe manouver inside the deceleration limit range.
+From lines 223 to 241 we define how to behave based on upcoming traffic light detections. If no red or yellow lights are detected (in a reasonable distance in front of the car) we will proceed to speed up without violating the incoming cruising speed via ROS parameter or max speed limit. Else we will decelerate and stop at the stopping line if the braking distance is long enough to guarantee a safe manouver inside the deceleration limit range.
 
-The speed up behaviour is defined by the function `speed_up()` (lines ... to ...) and the deceleration by function `slow_down()` (lines .. to ...).
+The speed up behaviour is defined by the function `speed_up()` (lines 243 to 254) and the deceleration by function `slow_down()` (lines 257 to 277).
 
 Finally the function `publish_final_waypoints()` which is called from `pose_cb` helps to publish the final waypoints, the `driving_mode_pub` (braking or not braking) and the waypoint representing the car´s current position. The last two do not appear in the overview figure in section "Project Overview".
 
@@ -108,9 +109,11 @@ Next and last stop of our overview will be the nodes inside of the Control Modul
 
 The DBW Node is implemented in [./ros/src/twist_controller/dbw_node.py](./ros/src/twist_controller/dbw_node.py) and here is where the steering, throttle and braking signal commands get published to the car or simulator.
 
-For this a twist controller is imported which is implemented [here](./ros/src/twist_controller/twist_controller.py). The twist controller (including the imported [yaw controller](./ros/src/yaw_controller/.py)) manages to set the desired linear and angular velocity with the help of a [PID controller](./ros/src/twist_controller/pid.py) and a [Low Pass Filter](./ros/src/twist_controller/lowpass.py) which outputs the necessary actuator signals. We subscribe to the desired linear and angular velocity via the `twist_cmd` topic which are published by the `Waypoint Follower` Node.
+For this a twist controller is imported which is implemented [here](./ros/src/twist_controller/twist_controller.py). The twist controller (including the imported [yaw controller](./ros/src/twist_controller/yaw_controller.py)) manages to set the desired linear and angular velocity with the help of a [PID controller](./ros/src/twist_controller/pid.py) and a [Low Pass Filter](./ros/src/twist_controller/lowpass.py) which outputs the necessary actuator signals. We subscribe to the desired linear and angular velocity via the `twist_cmd` topic which is published by the `Waypoint Follower` Node.
 
-Since a safety driver may take control of the car during testing we consider the DBW status in our implementation which can be found by subscribing to `/vehicle/dbw_enabled`.
+In order to mimic human driving and prevent ping-pong actioning of throttle and brake combinations we pass a variable specifying driving mode of the car ( acceleration / deceleration) and relax the precision of following suggested speed. E.g. if we are accelerating and the car  speed increased a bit more than expected the controller will just release throttle and let the car cruise so it can slow down on its own (lines 91-108). We then also mimic brake booster functionality in lines 120-128. When the desired speed is very low we will activate extra braking force. Moreover if the car almost stopped we will apply full braking to keep the car from moving.
+
+Finally, since a safety driver may take control of the car during testing we consider the DBW status in our implementation which can be found by subscribing to `/vehicle/dbw_enabled`.
 
 #### 3.2 Waypoint Follower (Control Module)
 
@@ -120,12 +123,23 @@ For the `Waypoint Follower` Node we make use of a package containing code from [
 
 Following the approach detailed above we get pretty satisfactory results when testing in the simulator and will proceed to submit our work for the real test on Carla!
 
-The car successfully drives around the simulator highway and test lot tracks with proper stopping at traffic lights. Rarely some accidents happen, but we attribute this solely to ocassional CPU overloads which cause the communication between the ROS controller and the simulator to work suboptimally. Here lies potentially further room for efficiency optimization of the code, which we have done partially already or making sure that enough hardware capacity is guaranteed.
+The car successfully drives around the simulator highway and test lot tracks with proper stopping at traffic lights. Rarely some accidents happen, but we attribute those incidents solely to ocassional CPU overloads which cause the communication between the ROS controller and the simulator to work suboptimally. Here lies potentially further room for efficiency optimization of the code, which we have done partially already (see next section) or making sure that enough hardware capacity is guaranteed.
 
 Finally we want to thank Udacity for this great opportunity and learning experience and all team members. We are very happy to graduate and happily await even more awesome future career paths.
 
-#
-------------------------------------
+### Optimization of Code Running Time Efficiency
+
+For automotive applications it is specially important to develop very efficient software solutions since hardware capacity on board is scarce. Powerful hardware drives the car price up and increases fuel consumption (or decreases the electric vehicle´s range) because of higher weight or higher electrical demands on the supply-system.
+
+Furthermore inefficient code presents the risk of overloading the hardware system and potentially "breaking", hence represents a very serious safety issue for autonomous driving. In order to address this one needs to implement redundant hardware and software system solutions, but the first measure should always be to write clean, efficient and robust code.
+
+In the scope of this project we have taken several measures to improve the efficiency of our code. Here are some examples:
+
+1. __Algorithm optimization:__ In `waypoint_updater.py`our first implementation kept re-using the previous waypoint match when computing the closest waypoint to the car. We optimized our algorithm so that it does not make unnecessary calls.
+2. __Avoid re-computing__: Our Traffic Light Detection Node was computing similar variables that were already being computed in `waypoint_updater`. Hence we made `waypoint_updater` publish the car waypoint position to the `/car_waypoint_id` topic and the traffic light detector Node read from that topic. 
+3. __Avoiding unnecessary readings__: Subscribing to ROS topics can be computationally expensive since we have incoming data streams incoming on every loop. In the Traffic Light Detection Node we found a more efficient way to avoid subscribing to the `traffic_lights` topic by pre-computing traffic light classification.
+
+---------------------------------------------------------------------------------------------
 ### Native Installation
 
 * Be sure that your workstation is running Ubuntu 16.04 Xenial Xerus or Ubuntu 14.04 Trusty Tahir. [Ubuntu downloads can be found here](https://www.ubuntu.com/download/desktop).
