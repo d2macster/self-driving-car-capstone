@@ -24,13 +24,13 @@ Udacity Self-Driving Car Harware Specs:
 
 ## The Team: Laters
 
-|           | Name                     |            GitHub                         |
-| --------- | -------------------------| :----------------------------------------:|
-| Team Lead | Andrii Cherniak          |            https://github.com/d2macster   |
-|           | Tharatch Sirinukulwattana|            https://github.com/TharatchSiri|
-|           | Melanie Plaza            |            https://github.com/mplaza      |
-|           | Alexander Epifanov       |            https://github.com/wave911     |
-|           | Igor Molina              |            https://github.com/igolas0     |
+|           | Name                     |    E-Mail                        |      GitHub                                     |
+| --------- | -------------------------| -------------------------------- | :----------------------------------------------:|
+| Team Lead | Andrii Cherniak          |    theandriicherniak@gmail.com   |      [Andrii](https://github.com/d2macster)     |
+|           | Tharatch Sirinukulwattana|    tharatch.siri@gmail.com       |      [Tharatch](https://github.com/TharatchSiri)|
+|           | Melanie Plaza            |    melanieplaza@gmail.com        |      [Melanie](https://github.com/mplaza)       |
+|           | Alexander Epifanov       |    wave911@yandex.ru             |      [Alexander](https://github.com/wave911)    |
+|           | Igor Molina              |    elchacho@gmail.com            |      [Igor](https://github.com/igolas0)         |
 
 ## Project Overview
 
@@ -63,7 +63,7 @@ We proceed to describe the modules and main components using the following struc
 
 The Perception Module consists of a Traffic Light Detection Node. For now we are skipping the Obstacle Detection Node since currently we do not dispose of Lidar and Radar data when testing on Carla. Hence it would be very difficult with current available hardware and measurements to build a realiable obstacle detector.
 
-As a classifier for the traffic detection node we use a Faster R-CNN Resnet 101 model which is pre-trained on the COCO dataset and then fine-tuned on some simulator and rosbag data.
+As a classifier for the traffic detection node we use a CNN model for light detection on the simulator. For light detection on real images and testing on Carla we trained a larger model which is more computationally expensive and requires powerful hardware like the one installed on Carla. 
 
 The Traffic Light Detection Node is implemented [here](./ros/src/tl_detector/tl_detector.py).
 
